@@ -10,7 +10,6 @@ print("=" * 50, flush=True)
 print("  NADO NLP VAULT MONITOR", flush=True)
 print("=" * 50, flush=True)
 
-# Config
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHATS = [c.strip() for c in os.environ.get("TELEGRAM_CHAT_IDS", "").split(",") if c.strip()]
 POLL = int(os.environ.get("POLL_INTERVAL", "15"))
@@ -46,9 +45,11 @@ def send_tg(msg):
 
 def fetch():
     try:
-        r = requests.get(f"{API}?type=nlp_pool_info",
-                         headers={"Accept-Encoding": "gzip, deflate"},
-                         timeout=15)
+        r = requests.get(
+            f"{API}?type=nlp_pool_info",
+            headers={"Accept-Encoding": "gzip, deflate"},
+            timeout=15
+        )
         if r.status_code == 200:
             return r.json()
         print(f"[API] {r.status_code}: {r.text[:200]}", flush=True)
@@ -59,7 +60,6 @@ def fetch():
 
 
 def get_total(data):
-    """Try to find vault total from API response. Prints all keys for debugging."""
     try:
         d = data
         if isinstance(d, dict) and "data" in d:
@@ -68,17 +68,13 @@ def get_total(data):
             d = d["result"]
         if isinstance(d, list) and len(d) > 0:
             d = d[0]
-
-        # Log all keys found for debugging
         if isinstance(d, dict):
-            print(f"[PARSE] Keys found: {list(d.keys())}", flush=True)
+            print(f"[PARSE] Keys: {list(d.keys())}", flush=True)
             for k, v in d.items():
                 print(f"[PARSE]   {k} = {str(v)[:100]}", flush=True)
         else:
-            print(f"[PARSE] Data type: {type(d)}, value: {str(d)[:200]}", flush=True)
+            print(f"[PARSE] Type: {type(d)}, val: {str(d)[:200]}", flush=True)
             return None
-
-        # Try all possible field names
         for key in ["total_quote", "total_deposits", "total_lp_deposits",
                      "total_assets", "total_quote_amount", "pool_total",
                      "tvl", "capacity", "total", "totalDeposits",
@@ -96,7 +92,6 @@ def get_total(data):
         return None
 
 
-# Init
 print("[*] Fetching initial state...", flush=True)
 data = fetch()
 if data:
@@ -112,9 +107,9 @@ else:
 
 vault_str = f"{prev:,.2f}" if prev is not None else "unknown"
 send_tg(
-    f"🟢 <b>Nado NLP Monitor Online</b>\n\n"
-    f"Vault: <b>{vault_str} USDT0</b>\n"
-    f"Polling every {POLL}s"
+    "🟢 <b>Nado NLP Monitor Online</b>\n\n"
+    "Vault: <b>" + vault_str + " USDT0</b>\n"
+    "Polling every " + str(POLL) + "s"
 )
 
 print("[*] Monitoring...", flush=True)
@@ -131,32 +126,28 @@ while True:
             if errors == 10:
                 send_tg("🔴 <b>Nado API unreachable</b>")
             continue
-
         errors = 0
         current = get_total(data)
         if current is None:
             continue
-
         if prev is not None:
             diff = current - prev
             if diff < 0 and abs(diff) >= MIN_W:
                 wcount += 1
                 amt = abs(diff)
                 now = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
-                print(f"[🔔 #{wcount}] -{amt:,.2f} | {prev:,.2f} → {current:,.2f}", flush=True)
+                print(f"[ALERT #{wcount}] -{amt:,.2f} | {prev:,.2f} -> {current:,.2f}", flush=True)
                 send_tg(
-                    f"🔔 <b>NLP Withdrawal Detected</b>\n\n"
-                    f"💰 <b>-{amt:,.2f} USDT0</b>\n"
-                    f"📉 {prev:,.2f} → {current:,.2f} USDT0\n"
-                    f"🕐 {now}\n\n"
-                    f"👉 <a href='https://app.nado.xyz/vault'>Deposit now</a>"
+                    "🔔 <b>NLP Withdrawal Detected</b>\n\n"
+                    "💰 <b>-" + f"{amt:,.2f}" + " USDT0</b>\n"
+                    "📉 " + f"{prev:,.2f}" + " → " + f"{current:,.2f}" + " USDT0\n"
+                    "🕐 " + now + "\n\n"
+                    "👉 <a href='https://app.nado.xyz/vault'>Deposit now</a>"
                 )
             elif diff > 0:
                 t = datetime.now(timezone.utc).strftime("%H:%M:%S")
-                print(f"  [{t}] +{diff:,.2f} → {current:,.2f}", flush=True)
-
+                print(f"  [{t}] +{diff:,.2f} -> {current:,.2f}", flush=True)
         prev = current
-
     except KeyboardInterrupt:
         send_tg("🔴 <b>Nado NLP Monitor stopped</b>")
         sys.exit(0)
