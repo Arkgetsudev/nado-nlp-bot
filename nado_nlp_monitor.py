@@ -16,9 +16,9 @@ POLL = int(os.environ.get("POLL_INTERVAL", "15"))
 MIN_W = float(os.environ.get("MIN_WITHDRAWAL", "0"))
 API = "https://gateway.prod.nado.xyz/v1/query"
 
-print(f"  Token: {'SET' if TOKEN else 'MISSING'}", flush=True)
-print(f"  Chats: {CHATS}", flush=True)
-print(f"  Poll:  {POLL}s", flush=True)
+print("  Token: " + ("SET" if TOKEN else "MISSING"), flush=True)
+print("  Chats: " + str(CHATS), flush=True)
+print("  Poll:  " + str(POLL) + "s", flush=True)
 print("=" * 50, flush=True)
 
 if not TOKEN:
@@ -30,85 +30,82 @@ if not CHATS:
 
 
 def send_tg(msg):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    url = "https://api.telegram.org/bot" + TOKEN + "/sendMessage"
     for cid in CHATS:
         try:
             r = requests.post(url, json={
-                "chat_id": cid, "text": msg,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True
+                "chat_id": cid,
+                "text": msg,
             }, timeout=10)
-            print(f"[TG] {cid}: {r.status_code}", flush=True)
+            print("[TG] " + cid + ": " + str(r.status_code), flush=True)
+            if r.status_code != 200:
+                print("[TG] Response: " + r.text[:200], flush=True)
         except Exception as e:
-            print(f"[TG] {cid} error: {e}", flush=True)
+            print("[TG] " + cid + " error: " + str(e), flush=True)
 
 
 def fetch():
     try:
         r = requests.get(
-            f"{API}?type=nlp_pool_info",
+            API + "?type=nlp_pool_info",
             headers={"Accept-Encoding": "gzip, deflate"},
             timeout=15
         )
         if r.status_code == 200:
             return r.json()
-        print(f"[API] {r.status_code}: {r.text[:200]}", flush=True)
+        print("[API] " + str(r.status_code), flush=True)
         return None
     except Exception as e:
-        print(f"[API] error: {e}", flush=True)
+        print("[API] error: " + str(e), flush=True)
         return None
 
 
 def get_total(data):
+    """
+    Parse vault total from Nado API response.
+    Structure: { "status": "success", "data": { "nlp_pools": [ { "subaccount_info": { "healths": [ { "assets": "..." } ] } } ] } }
+    The assets field in healths[0] represents the total vault value in x18.
+    """
     try:
-        d = data
-        if isinstance(d, dict) and "data" in d:
-            d = d["data"]
-        if isinstance(d, dict) and "result" in d:
-            d = d["result"]
-        if isinstance(d, list) and len(d) > 0:
-            d = d[0]
-        if isinstance(d, dict):
-            print(f"[PARSE] Keys: {list(d.keys())}", flush=True)
-            for k, v in d.items():
-                print(f"[PARSE]   {k} = {str(v)[:100]}", flush=True)
-        else:
-            print(f"[PARSE] Type: {type(d)}, val: {str(d)[:200]}", flush=True)
+        pools = data.get("data", {}).get("nlp_pools", [])
+        if not pools:
+            print("[PARSE] No nlp_pools found", flush=True)
             return None
-        for key in ["total_quote", "total_deposits", "total_lp_deposits",
-                     "total_assets", "total_quote_amount", "pool_total",
-                     "tvl", "capacity", "total", "totalDeposits",
-                     "total_value", "vault_total", "net_assets"]:
-            if key in d:
-                val = float(d[key])
-                if val > 1e12:
-                    return val / 1e18
-                elif val > 1e4:
-                    return val / 1e6
-                return val
-        return None
+
+        pool = pools[0]
+        sub_info = pool.get("subaccount_info", {})
+        healths = sub_info.get("healths", [])
+
+        if not healths:
+            print("[PARSE] No healths found", flush=True)
+            return None
+
+        # healths[0] contains initial margin health with assets/liabilities
+        assets_raw = healths[0].get("assets", "0")
+        assets = float(assets_raw) / 1e18
+
+        print("[PARSE] Assets: " + str(round(assets, 2)), flush=True)
+        return assets
+
     except Exception as e:
-        print(f"[PARSE] error: {e}", flush=True)
+        print("[PARSE] error: " + str(e), flush=True)
         return None
 
 
+# Init
 print("[*] Fetching initial state...", flush=True)
 data = fetch()
-if data:
-    print(f"[+] Raw: {json.dumps(data)[:1000]}", flush=True)
-else:
-    print("[!] No data from API", flush=True)
-
 prev = get_total(data) if data else None
-if prev is not None:
-    print(f"[+] Vault: {prev:,.2f} USDT0", flush=True)
-else:
-    print("[!] Could not parse vault total - check keys above", flush=True)
 
-vault_str = f"{prev:,.2f}" if prev is not None else "unknown"
+if prev is not None:
+    print("[+] Vault: " + str(round(prev, 2)) + " USDT0", flush=True)
+else:
+    print("[!] Could not parse vault total", flush=True)
+
+vault_str = str(round(prev, 2)) if prev is not None else "unknown"
 send_tg(
-    "🟢 <b>Nado NLP Monitor Online</b>\n\n"
-    "Vault: <b>" + vault_str + " USDT0</b>\n"
+    "🟢 Nado NLP Monitor Online\n\n"
+    "Vault: " + vault_str + " USDT0\n"
     "Polling every " + str(POLL) + "s"
 )
 
@@ -124,7 +121,7 @@ while True:
         if not data:
             errors += 1
             if errors == 10:
-                send_tg("🔴 <b>Nado API unreachable</b>")
+                send_tg("🔴 Nado API unreachable (10+ failed polls)")
             continue
         errors = 0
         current = get_total(data)
@@ -136,21 +133,21 @@ while True:
                 wcount += 1
                 amt = abs(diff)
                 now = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
-                print(f"[ALERT #{wcount}] -{amt:,.2f} | {prev:,.2f} -> {current:,.2f}", flush=True)
+                print("[ALERT #" + str(wcount) + "] -" + str(round(amt, 2)) + " | " + str(round(prev, 2)) + " -> " + str(round(current, 2)), flush=True)
                 send_tg(
-                    "🔔 <b>NLP Withdrawal Detected</b>\n\n"
-                    "💰 <b>-" + f"{amt:,.2f}" + " USDT0</b>\n"
-                    "📉 " + f"{prev:,.2f}" + " → " + f"{current:,.2f}" + " USDT0\n"
+                    "🔔 NLP Withdrawal Detected!\n\n"
+                    "💰 -" + str(round(amt, 2)) + " USDT0\n"
+                    "📉 " + str(round(prev, 2)) + " → " + str(round(current, 2)) + " USDT0\n"
                     "🕐 " + now + "\n\n"
-                    "👉 <a href='https://app.nado.xyz/vault'>Deposit now</a>"
+                    "👉 Deposit now: https://app.nado.xyz/vault"
                 )
             elif diff > 0:
                 t = datetime.now(timezone.utc).strftime("%H:%M:%S")
-                print(f"  [{t}] +{diff:,.2f} -> {current:,.2f}", flush=True)
+                print("  [" + t + "] +" + str(round(diff, 2)) + " -> " + str(round(current, 2)), flush=True)
         prev = current
     except KeyboardInterrupt:
-        send_tg("🔴 <b>Nado NLP Monitor stopped</b>")
+        send_tg("🔴 Nado NLP Monitor stopped")
         sys.exit(0)
     except Exception as e:
-        print(f"[!] {e}", flush=True)
+        print("[!] " + str(e), flush=True)
         time.sleep(5)
