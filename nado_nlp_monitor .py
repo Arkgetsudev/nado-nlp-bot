@@ -59,6 +59,7 @@ def fetch():
 
 
 def get_total(data):
+    """Try to find vault total from API response. Prints all keys for debugging."""
     try:
         d = data
         if isinstance(d, dict) and "data" in d:
@@ -67,10 +68,21 @@ def get_total(data):
             d = d["result"]
         if isinstance(d, list) and len(d) > 0:
             d = d[0]
-        if not isinstance(d, dict):
+
+        # Log all keys found for debugging
+        if isinstance(d, dict):
+            print(f"[PARSE] Keys found: {list(d.keys())}", flush=True)
+            for k, v in d.items():
+                print(f"[PARSE]   {k} = {str(v)[:100]}", flush=True)
+        else:
+            print(f"[PARSE] Data type: {type(d)}, value: {str(d)[:200]}", flush=True)
             return None
+
+        # Try all possible field names
         for key in ["total_quote", "total_deposits", "total_lp_deposits",
-                     "total_assets", "total_quote_amount", "pool_total"]:
+                     "total_assets", "total_quote_amount", "pool_total",
+                     "tvl", "capacity", "total", "totalDeposits",
+                     "total_value", "vault_total", "net_assets"]:
             if key in d:
                 val = float(d[key])
                 if val > 1e12:
@@ -78,12 +90,9 @@ def get_total(data):
                 elif val > 1e4:
                     return val / 1e6
                 return val
-        for key in ["tvl", "capacity", "total"]:
-            if key in d:
-                return float(d[key])
         return None
     except Exception as e:
-        print(f"[PARSE] {e}", flush=True)
+        print(f"[PARSE] error: {e}", flush=True)
         return None
 
 
@@ -91,7 +100,7 @@ def get_total(data):
 print("[*] Fetching initial state...", flush=True)
 data = fetch()
 if data:
-    print(f"[+] Raw: {json.dumps(data)[:500]}", flush=True)
+    print(f"[+] Raw: {json.dumps(data)[:1000]}", flush=True)
 else:
     print("[!] No data from API", flush=True)
 
@@ -99,11 +108,12 @@ prev = get_total(data) if data else None
 if prev is not None:
     print(f"[+] Vault: {prev:,.2f} USDT0", flush=True)
 else:
-    print("[!] Could not parse vault total", flush=True)
+    print("[!] Could not parse vault total - check keys above", flush=True)
 
+vault_str = f"{prev:,.2f}" if prev is not None else "unknown"
 send_tg(
     f"🟢 <b>Nado NLP Monitor Online</b>\n\n"
-    f"Vault: <b>{prev:,.2f if prev else '?'} USDT0</b>\n"
+    f"Vault: <b>{vault_str} USDT0</b>\n"
     f"Polling every {POLL}s"
 )
 
